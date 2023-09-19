@@ -21,17 +21,18 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
     """ Vision Transformer with support for global average pooling
     """
 
-    def __init__(self, global_pool=False, **kwargs):
+    def __init__(self, global_pool=False, get_features=False, **kwargs):
         super(VisionTransformer, self).__init__(**kwargs)
 
         self.global_pool = global_pool
+        self.get_features = get_features
         if self.global_pool:
             norm_layer = kwargs['norm_layer']
             embed_dim = kwargs['embed_dim']
             self.fc_norm = norm_layer(embed_dim)
 
             del self.norm  # remove the original norm
-
+    
     def forward_features(self, x):
         B = x.shape[0]
         x = self.patch_embed(x)
@@ -52,7 +53,14 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
             outcome = x[:, 0]
 
         return outcome
+    
+    def forward_head(self, x):
+        return x if self.get_features else self.head(x)
 
+    def forward(self, x):
+        x = self.forward_features(x)
+        x = self.forward_head(x)
+        return x
 
 def vit_small_patch16(**kwargs):
     model = VisionTransformer(
