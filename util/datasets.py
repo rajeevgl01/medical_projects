@@ -66,7 +66,6 @@ def build_dataset_chest_xray(split, args):
         data_list = getattr(args, f'{split}_list')
         dataset = ChestX_ray14(args.data_path, data_list, augment=transform, num_class=14)
     elif args.dataset == 'covidx':
-        print(args.dataset)
         dataset = Covidx(data_dir=args.data_path, phase=split, transform=transform)
     elif args.dataset == 'node21':
         dataset = Node21(data_dir=args.data_path, phase=split, transform=transform)

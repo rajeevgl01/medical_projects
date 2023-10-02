@@ -1,5 +1,4 @@
 import os
-os.environ['SCIPY_USE_PROPACK'] = '1'
 
 import torch
 import torch.nn as nn
@@ -46,12 +45,12 @@ def main(args):
 	# U, S, V = np.linalg.svd(kernel_matrix)
 	# kernel_matrix = scipy.sparse.csr_matrix(kernel_matrix)
 	# U, S, V = scipy.sparse.linalg.svds(kernel_matrix, dim, solver='propack')
-	U, S, V = scipy.linalg.svd(kernel_matrix)
+	U, S, V = scipy.linalg.svd(kernel_matrix, full_matrices=False)
 
 
 	end = time.time()
 	
-	S = np.power(S, 2)
+	# S = np.power(S, 2)
 	U, S, V = torch.tensor(U), torch.tensor(S), torch.tensor(V)
 	_logger.info(end-start)
 	torch.save(U, f'{args.out_dir}/U_{args.model}_{dim}_fast.pt')

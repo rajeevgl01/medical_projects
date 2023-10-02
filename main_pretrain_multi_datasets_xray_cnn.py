@@ -104,7 +104,8 @@ def get_args_parser():
     parser.add_argument('--dist_on_itp', action='store_true')
     parser.add_argument('--dist_url', default='env://',
                         help='url used to set up distributed training')
-    parser.add_argument("--train_list", default=None, type=str, help="file for training list")
+    parser.add_argument("--train_list", default=None,
+                        type=str, help="file for training list")
     parser.add_argument('--random_resize_range', type=float, nargs='+', default=None,
                         help='RandomResizedCrop min/max ratio, default: None)')
     parser.add_argument('--fixed_lr', action='store_true', default=False)
@@ -160,7 +161,8 @@ def main(args):
                 resize_ratio_min, resize_ratio_max = args.random_resize_range
                 print(resize_ratio_min, resize_ratio_max)
                 transform_train = custom_train_transform(size=args.input_size,
-                                                         scale=(resize_ratio_min, resize_ratio_max),
+                                                         scale=(
+                                                             resize_ratio_min, resize_ratio_max),
                                                          mean=dataset_mean, std=dataset_std)
             else:
                 resize_ratio_min, resize_ratio_max = args.random_resize_range
@@ -232,7 +234,8 @@ def main(args):
         persistent_workers=True
     )
 
-    model = MaskedAutoencoderCNN(img_size=224, patch_size=16, model_arch='Unet', encoder_name=args.model)
+    model = MaskedAutoencoderCNN(
+        img_size=224, patch_size=16, model_arch='Unet', encoder_name=args.model)
     model.to(device)
 
     model_without_ddp = model
@@ -250,16 +253,19 @@ def main(args):
     print("effective batch size: %d" % eff_batch_size)
 
     if args.distributed:
-        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=True)
+        model = torch.nn.parallel.DistributedDataParallel(
+            model, device_ids=[args.gpu], find_unused_parameters=True)
         model_without_ddp = model.module
 
     # following timm: set wd as 0 for bias and norm layers
-    param_groups = optim_factory.add_weight_decay(model_without_ddp, args.weight_decay)
+    param_groups = optim_factory.add_weight_decay(
+        model_without_ddp, args.weight_decay)
     optimizer = torch.optim.AdamW(param_groups, lr=args.lr, betas=(0.9, 0.95))
     print(optimizer)
     loss_scaler = NativeScaler()
 
-    misc.load_model(args=args, model_without_ddp=model_without_ddp, optimizer=optimizer, loss_scaler=loss_scaler)
+    misc.load_model(args=args, model_without_ddp=model_without_ddp,
+                    optimizer=optimizer, loss_scaler=loss_scaler)
 
     print(f"Start training for {args.epochs} epochs")
     start_time = time.time()
@@ -278,7 +284,7 @@ def main(args):
                 loss_scaler=loss_scaler, epoch=epoch)
 
         log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
-                     'epoch': epoch }
+                     'epoch': epoch}
 
         if args.output_dir and misc.is_main_process():
             if log_writer is not None:

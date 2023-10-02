@@ -11,36 +11,37 @@ import torch.nn.functional as F
 
 from torchvision.models.densenet import *
 
+
 class DenseNet(DenseNet):
-	def __init__(
-		self,
-		growth_rate,
-        block_config,
-        num_init_features,
-		get_features=False,
-		**kwargs
-	) -> None:
+    def __init__(
+            self,
+            growth_rate,
+            block_config,
+            num_init_features,
+            **kwargs
+    ) -> None:
 
-		super(DenseNet, self).__init__(**kwargs)
-		self.get_features = get_features
+        super(DenseNet, self).__init__(**kwargs)
 
-	def forward(self, x):
-		features = self.features(x)
-		out = F.relu(features, inplace=True)
-		out = F.adaptive_avg_pool2d(out, (1, 1))
-		out = torch.flatten(out, 1)
-		x = out
-		out = self.classifier(out)
-		return x if self.get_features else out
+    def forward(self, x):
+        features = self.features(x)
+        out = F.relu(features, inplace=True)
+        out = F.adaptive_avg_pool2d(out, (1, 1))
+        out = torch.flatten(out, 1)
+        out = self.classifier(out)
+        
+        return out, features
+
 
 def _densenet(growth_rate,
-    block_config,
-    num_init_features,
-    weights,
-    progress,
-    **kwargs) -> DenseNet:
+              block_config,
+              num_init_features,
+              weights,
+              progress,
+              **kwargs) -> DenseNet:
     model = DenseNet(growth_rate, block_config, num_init_features, **kwargs)
     return model
 
-def densenet121(*, weights = None, progress: bool = True, **kwargs):
-	return _densenet(32, (6, 12, 24, 16), 64, weights, progress, **kwargs)
+
+def densenet121(*, weights=None, progress: bool = True, **kwargs):
+    return _densenet(32, (6, 12, 24, 16), 64, weights, progress, **kwargs)

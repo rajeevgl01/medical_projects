@@ -34,10 +34,13 @@ class MaskedAutoencoderCNN(nn.Module):
         # MAE encoder specifics
 
         self.model = smp.__dict__[model_arch](
-            encoder_name=encoder_name,        # choose encoder, e.g. mobilenet_v2 or efficientnet-b7
+            # choose encoder, e.g. mobilenet_v2 or efficientnet-b7
+            encoder_name=encoder_name,
             encoder_weights=None,     # use `imagenet` pre-trained weights for encoder initialization
-            in_channels=3,                  # model input channels (1 for gray-scale images, 3 for RGB, etc.)
-            classes=3,                      # model output channels (number of classes in your dataset)
+            # model input channels (1 for gray-scale images, 3 for RGB, etc.)
+            in_channels=3,
+            # model output channels (number of classes in your dataset)
+            classes=3,
         )
 
         self.img_size = img_size
@@ -84,7 +87,8 @@ class MaskedAutoencoderCNN(nn.Module):
         noise = torch.rand(N, L, device=x.device)  # noise in [0, 1]
 
         # sort noise for each sample
-        ids_shuffle = torch.argsort(noise, dim=1)  # ascend: small is keep, large is remove
+        # ascend: small is keep, large is remove
+        ids_shuffle = torch.argsort(noise, dim=1)
         ids_restore = torch.argsort(ids_shuffle, dim=1)
 
         # generate the binary mask: 0 is keep, 1 is remove
@@ -114,5 +118,3 @@ class MaskedAutoencoderCNN(nn.Module):
         pred = self.model(imgs_masked)
         loss = self.forward_loss(imgs, pred, mask)
         return loss, pred, mask
-
-

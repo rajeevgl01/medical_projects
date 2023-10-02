@@ -9,6 +9,15 @@
 # MoCo v3: https://github.com/facebookresearch/moco-v3
 # --------------------------------------------------------
 
+from engine_finetune import train_one_epoch, evaluate_chestxray
+import models_vit
+from util.crop import RandomResizedCrop
+from util.lars import LARS
+from util.misc import NativeScalerWithGradNormCount as NativeScaler
+from util.pos_embed import interpolate_pos_embed
+from util.datasets import build_dataset, build_dataset_chest_xray
+import util.misc as misc
+from timm.models.layers import trunc_normal_
 import argparse
 import datetime
 import json
@@ -25,23 +34,12 @@ import torchvision.datasets as datasets
 
 import timm
 
-assert timm.__version__ == "0.3.2" # version check
-from timm.models.layers import trunc_normal_
-
-import util.misc as misc
-from util.datasets import build_dataset, build_dataset_chest_xray
-from util.pos_embed import interpolate_pos_embed
-from util.misc import NativeScalerWithGradNormCount as NativeScaler
-from util.lars import LARS
-from util.crop import RandomResizedCrop
-
-import models_vit
-
-from engine_finetune import train_one_epoch, evaluate_chestxray
+assert timm.__version__ == "0.3.2"  # version check
 
 
 def get_args_parser():
-    parser = argparse.ArgumentParser('MAE linear probing for image classification', add_help=False)
+    parser = argparse.ArgumentParser(
+        'MAE linear probing for image classification', add_help=False)
     parser.add_argument('--batch_size', default=512, type=int,
                         help='Batch size per GPU (effective batch size is batch_size * accum_iter * # gpus')
     parser.add_argument('--epochs', default=90, type=int)
@@ -116,15 +114,20 @@ def get_args_parser():
     parser.add_argument('--dist_on_itp', action='store_true')
     parser.add_argument('--dist_url', default='env://',
                         help='url used to set up distributed training')
-    parser.add_argument("--train_list", default=None, type=str, help="file for train list")
-    parser.add_argument("--val_list", default=None, type=str, help="file for val list")
-    parser.add_argument("--test_list", default=None, type=str, help="file for test list")
+    parser.add_argument("--train_list", default=None,
+                        type=str, help="file for train list")
+    parser.add_argument("--val_list", default=None,
+                        type=str, help="file for val list")
+    parser.add_argument("--test_list", default=None,
+                        type=str, help="file for test list")
     parser.add_argument('--eval_interval', default=10, type=int)
     parser.add_argument('--fixed_lr', action='store_true', default=False)
     parser.add_argument('--vit_dropout_rate', type=float, default=0,
                         help='Dropout rate for ViT blocks (default: 0.0)')
-    parser.add_argument("--build_timm_transform", action='store_true', default=False)
-    parser.add_argument("--aug_strategy", default='default', type=str, help="strategy for data augmentation")
+    parser.add_argument("--build_timm_transform",
+                        action='store_true', default=False)
+    parser.add_argument("--aug_strategy", default='default',
+                        type=str, help="strategy for data augmentation")
     parser.add_argument("--dataset", default='chestxray', type=str)
     parser.add_argument('--loss_func', default=None, type=str)
     return parser
@@ -221,7 +224,8 @@ def main(args):
         print(msg)
 
         if args.global_pool:
-            assert set(msg.missing_keys) == {'head.weight', 'head.bias', 'fc_norm.weight', 'fc_norm.bias'}
+            assert set(msg.missing_keys) == {
+                'head.weight', 'head.bias', 'fc_norm.weight', 'fc_norm.bias'}
         else:
             assert set(msg.missing_keys) == {'head.weight', 'head.bias'}
 
@@ -230,7 +234,8 @@ def main(args):
 
     # for linear prob only
     # hack: revise model's head with BN
-    model.head = torch.nn.Sequential(torch.nn.BatchNorm1d(model.head.in_features, affine=False, eps=1e-6), model.head)
+    model.head = torch.nn.Sequential(torch.nn.BatchNorm1d(
+        model.head.in_features, affine=False, eps=1e-6), model.head)
     # freeze all but the head
     for _, p in model.named_parameters():
         p.requires_grad = False
@@ -240,13 +245,14 @@ def main(args):
     model.to(device)
 
     model_without_ddp = model
-    n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    n_parameters = sum(p.numel()
+                       for p in model.parameters() if p.requires_grad)
 
     print("Model = %s" % str(model_without_ddp))
     print('number of params (M): %.2f' % (n_parameters / 1.e6))
 
     eff_batch_size = args.batch_size * args.accum_iter * misc.get_world_size()
-    
+
     if args.lr is None:  # only base_lr is specified
         args.lr = args.blr * eff_batch_size / 256
 
@@ -257,10 +263,12 @@ def main(args):
     print("effective batch size: %d" % eff_batch_size)
 
     if args.distributed:
-        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu])
+        model = torch.nn.parallel.DistributedDataParallel(
+            model, device_ids=[args.gpu])
         model_without_ddp = model.module
 
-    optimizer = LARS(model_without_ddp.head.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    optimizer = LARS(model_without_ddp.head.parameters(),
+                     lr=args.lr, weight_decay=args.weight_decay)
     print(optimizer)
     loss_scaler = NativeScaler()
 
@@ -281,14 +289,15 @@ def main(args):
     # if
     # criterion = torch.nn.BCEWithLogitsLoss()
 
-
     print("criterion = %s" % str(criterion))
 
-    misc.load_model(args=args, model_without_ddp=model_without_ddp, optimizer=optimizer, loss_scaler=loss_scaler)
+    misc.load_model(args=args, model_without_ddp=model_without_ddp,
+                    optimizer=optimizer, loss_scaler=loss_scaler)
 
     if args.eval:
         test_stats = evaluate_chestxray(data_loader_test, model, device, args)
-        print(f"Average AUC of the network on the test set images: {test_stats['auc_avg']:.4f}")
+        print(
+            f"Average AUC of the network on the test set images: {test_stats['auc_avg']:.4f}")
         print(test_stats['auc_each_class'])
         exit(0)
 
@@ -311,19 +320,23 @@ def main(args):
                 args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
                 loss_scaler=loss_scaler, epoch=epoch)
 
-            test_stats = evaluate_chestxray(data_loader_test, model, device, args)
-            print(f"Average AUC on the test set images: {test_stats['auc_avg']:.4f}")
+            test_stats = evaluate_chestxray(
+                data_loader_test, model, device, args)
+            print(
+                f"Average AUC on the test set images: {test_stats['auc_avg']:.4f}")
             max_auc = max(max_auc, test_stats['auc_avg'])
             print(f'Max Average AUC: {max_auc:.4f}', {max_auc})
 
             if log_writer is not None:
-                log_writer.add_scalar('perf/auc_avg', test_stats['auc_avg'], epoch)
-                log_writer.add_scalar('perf/test_loss', test_stats['loss'], epoch)
+                log_writer.add_scalar(
+                    'perf/auc_avg', test_stats['auc_avg'], epoch)
+                log_writer.add_scalar(
+                    'perf/test_loss', test_stats['loss'], epoch)
 
             log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
-                            **{f'test_{k}': v for k, v in test_stats.items()},
-                            'epoch': epoch,
-                            'n_parameters': n_parameters}
+                         **{f'test_{k}': v for k, v in test_stats.items()},
+                         'epoch': epoch,
+                         'n_parameters': n_parameters}
 
             if args.output_dir and misc.is_main_process():
                 if log_writer is not None:

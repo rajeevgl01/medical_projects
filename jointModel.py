@@ -34,8 +34,8 @@ class JointLowRankModel(nn.Module):
                 param.requires_grad = False
 
         if not trainLinearLayer:
-           for param in self.linearLayer.parameters():
-               param.requires_grad = False
+            for param in self.linearLayer.parameters():
+                param.requires_grad = False
 
     @torch.jit.ignore
     def no_weight_decay(self):

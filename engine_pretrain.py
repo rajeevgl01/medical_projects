@@ -25,7 +25,8 @@ def train_one_epoch(model: torch.nn.Module,
                     args=None):
     model.train(True)
     metric_logger = misc.MetricLogger(delimiter="  ")
-    metric_logger.add_meter('lr', misc.SmoothedValue(window_size=1, fmt='{value:.6f}'))
+    metric_logger.add_meter('lr', misc.SmoothedValue(
+        window_size=1, fmt='{value:.6f}'))
     header = 'Epoch: [{}]'.format(epoch)
     print_freq = 20
 
@@ -40,7 +41,8 @@ def train_one_epoch(model: torch.nn.Module,
 
         # we use a per iteration (instead of per epoch) lr scheduler
         if data_iter_step % accum_iter == 0:
-            lr_sched.adjust_learning_rate(optimizer, data_iter_step / len(data_loader) + epoch, args)
+            lr_sched.adjust_learning_rate(
+                optimizer, data_iter_step / len(data_loader) + epoch, args)
         if isinstance(samples, list):
             imgs = samples[0].to(device, non_blocking=True)
             heatmaps = samples[1].to(device, non_blocking=True)
@@ -50,7 +52,8 @@ def train_one_epoch(model: torch.nn.Module,
 
         with torch.cuda.amp.autocast():
             if heatmaps is not None:
-                loss, _, _ = model(imgs, mask_ratio=args.mask_ratio, heatmaps=heatmaps)
+                loss, _, _ = model(
+                    imgs, mask_ratio=args.mask_ratio, heatmaps=heatmaps)
             else:
                 loss, _, _ = model(imgs, mask_ratio=args.mask_ratio)
 
@@ -78,10 +81,10 @@ def train_one_epoch(model: torch.nn.Module,
             """ We use epoch_1000x as the x-axis in tensorboard.
             This calibrates different curves when batch size changes.
             """
-            epoch_1000x = int((data_iter_step / len(data_loader) + epoch) * 1000)
+            epoch_1000x = int(
+                (data_iter_step / len(data_loader) + epoch) * 1000)
             log_writer.add_scalar('train_loss', loss_value_reduce, epoch_1000x)
             log_writer.add_scalar('lr', lr, epoch_1000x)
-
 
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()

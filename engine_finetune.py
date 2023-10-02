@@ -27,16 +27,28 @@ from libauc import losses
 from sklearn.metrics import confusion_matrix
 import copy
 
+def trucated_nuclear_loss(F, U, V, softRank, id_F):
+    # F: (batch_size, d)
+    # U: (batch_size, d) or (n, d) with id_F
+    # V: (d, d)
+    if U.shape[0] != F.shape[0]:
+        U_mini_batch = U[id_F]
+    S = U_mini_batch.T @ F
+    S = S @ V
+    S = torch.diag(S)
+    nuc_loss = torch.norm(S[softRank:], p=1)
+    return nuc_loss
 
 def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
                     data_loader: Iterable, optimizer: torch.optim.Optimizer,
                     device: torch.device, epoch: int, loss_scaler, max_norm: float = 0,
-                    mixup_fn: Optional[Mixup] = None, log_writer=None,
+                    mixup_fn: Optional[Mixup] = None, log_writer=None, U=None, V=None,
                     args=None, last_activation=None):
+    assert U.numel() > 0
+    assert V.numel() > 0
     model.train(True)
     metric_logger = misc.MetricLogger(delimiter="  ")
-    metric_logger.add_meter('lr', misc.SmoothedValue(
-        window_size=1, fmt='{value:.6f}'))
+    metric_logger.add_meter('lr', misc.SmoothedValue(window_size=1, fmt='{value:.6f}'))
     header = 'Epoch: [{}]'.format(epoch)
     print_freq = 20
 
@@ -47,15 +59,16 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
     if log_writer is not None:
         print('log_dir: {}'.format(log_writer.log_dir))
 
-    for data_iter_step, (samples, targets) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
+    for data_iter_step, (samples, targets, indexes) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
 
         # we use a per iteration (instead of per epoch) lr scheduler
         if data_iter_step % accum_iter == 0:
-            lr_sched.adjust_learning_rate(
-                optimizer, data_iter_step / len(data_loader) + epoch, args)
+            lr_sched.adjust_learning_rate(optimizer, data_iter_step / len(data_loader) + epoch, args)
 
         samples = samples.to(device, non_blocking=True)
         targets = targets.to(device, non_blocking=True)
+        indexes = indexes.to(device, non_blocking=True)
+
         # print('samples', samples.shape, 'targets', targets.shape)
         if mixup_fn is not None:
             samples, targets = mixup_fn(samples, targets)
@@ -63,12 +76,14 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
             if last_activation == 'sigmoid':
                 last_activation = torch.nn.Sigmoid()
         with torch.cuda.amp.autocast():
-            outputs = model(samples)
+            outputs, features = model(samples)
             # print('outputs', outputs.shape, 'targets', targets.shape)
             # print(outputs.shape, targets.shape, torch.unique(targets))'
             if last_activation is not None:
                 outputs = last_activation(outputs)
-            loss = criterion(outputs, targets)
+            ce_loss = criterion(outputs, targets)
+            tn_loss = trucated_nuclear_loss(features, U, V, args.softRank, indexes.to(torch.int64))
+            loss = ce_loss + args.tn_loss_factor * tn_loss
 
         loss_value = loss.item()
 
@@ -86,6 +101,8 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         torch.cuda.synchronize()
 
         metric_logger.update(loss=loss_value)
+        metric_logger.update(ce_loss=ce_loss.item())
+        metric_logger.update(tn_loss=tn_loss.item())
         min_lr = 10.
         max_lr = 0.
         for group in optimizer.param_groups:
@@ -99,8 +116,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
             """ We use epoch_1000x as the x-axis in tensorboard.
             This calibrates different curves when batch size changes.
             """
-            epoch_1000x = int(
-                (data_iter_step / len(data_loader) + epoch) * 1000)
+            epoch_1000x = int((data_iter_step / len(data_loader) + epoch) * 1000)
             log_writer.add_scalar('loss', loss_value_reduce, epoch_1000x)
             log_writer.add_scalar('lr', max_lr, epoch_1000x)
 
@@ -167,128 +183,8 @@ def accuracy(output, target, topk=(1,)):
     return [correct[:k].reshape(-1).float().sum(0) * 100. / batch_size for k in topk]
 
 
-# @torch.no_grad()
-# def evaluate_chestxray(data_loader, model, device, get_features, args):
-
-#     if args.dataset == 'chestxray':
-#         criterion = torch.nn.BCEWithLogitsLoss()
-#     elif args.dataset == 'covidx':
-#         criterion = torch.nn.CrossEntropyLoss()
-#     elif args.dataset == 'node21':
-#         if args.loss_func == 'bce':
-#             criterion = torch.nn.BCEWithLogitsLoss()
-#         elif args.loss_func is None:
-#             criterion = torch.nn.CrossEntropyLoss()
-#     elif args.dataset == 'chexpert':
-#         criterion = losses.CrossEntropyLoss()
-#     else:
-#         raise NotImplementedError
-
-#     metric_logger = misc.MetricLogger(delimiter="  ")
-#     header = 'Test:'
-
-#     # switch to evaluation mode
-#     model.eval()
-#     outputs = []
-#     targets = []
-#     linearMapping = torch.empty(0, 1024).cuda()
-#     for batch in metric_logger.log_every(data_loader, 10, header):
-#         images = batch[0]
-#         target = batch[-1]
-#         images = images.to(device, non_blocking=True)
-#         target = target.to(device, non_blocking=True)
-
-#         # compute output
-#         with torch.cuda.amp.autocast():
-#             output = model(images)
-#             # print(1, linearMapping.shape, output.shape)
-#             # if get_features:
-#             #    linearMapping = torch.cat((linearMapping, output), dim=0)
-#             #    print(2, linearMapping.shape)
-#             #    continue
-#             loss = criterion(output, target)
-
-
-#         if args.dataset == 'covidx':
-#             acc1 = accuracy(output, target, topk=(1, ))[0]
-
-#         outputs.append(output)
-#         targets.append(target)
-#         # acc1, acc5 = accuracy(output, target, topk=(1, 5))
-#         #
-
-#         metric_logger.update(loss=loss.item())
-
-#         if args.dataset == 'covidx':
-#             batch_size = images.shape[0]
-#             metric_logger.meters['acc1'].update(acc1.item(), n=batch_size)
-#         # metric_logger.meters['acc5'].update(acc5.item(), n=batch_size)
-#     # gather the stats from all processes
-#     # print(len(outputs), outputs[0].shape)
-#     # outputs = collect_results_gpu(outputs, len(data_loader.dataset))
-#     # targets = collect_results_gpu(targets, len(data_loader.dataset))
-#     # print(outputs_collected)
-#     # rank = dist.get_rank()
-#     # if rank == 0:
-#     #     outputs_gathered = [output.to(device) for output in outputs]
-#     #     targets_gathered = [target.to(device) for target in targets]
-#     #     outputs = torch.cat(outputs_gathered, dim=0).sigmoid().cpu().numpy()
-#     #     targets = torch.cat(targets_gathered, dim=0).cpu().numpy()
-#     #     auc_each_class = computeAUROC(targets, outputs, 14)
-#     #     auc_avg = np.average(auc_each_class)
-
-#     torch.save(linearMapping, "/data/yyang409/rgoel15/medical_mae_features/linearMapping_densenet_imagenet.pt")
-#     num_classes = args.nb_classes
-
-#     outputs = torch.cat(outputs, dim=0).sigmoid().cpu().numpy()
-#     if args.dataset == 'covidx' or args.dataset == 'node21':
-
-#         targets = torch.cat(targets, dim=0)
-#         # assert targets.dim == 1
-#         print(targets.shape)
-#         if args.dataset == 'covidx':
-#             y_pred = copy.deepcopy(outputs).argmax(axis=-1)
-#             y_gt = copy.deepcopy(targets.cpu().numpy())
-#             y_pred[y_pred == 2] = 1
-#             y_gt[y_gt == 2] = 1
-#             y_pred[y_pred == 3] = 2
-#             y_gt[y_gt == 3] = 2
-#             print_metrics_covidx(y_gt, y_pred)
-#         if num_classes == 1:
-#             targets = targets.cpu().numpy()
-#         else:
-#             targets = F.one_hot(targets, num_classes=num_classes).cpu().numpy()
-#     elif args.dataset == 'chestxray':
-#         targets = torch.cat(targets, dim=0).cpu().numpy()
-#     elif args.dataset == 'chexpert':
-#         targets = torch.cat(targets, dim=0).cpu().numpy()
-#     else:
-#         raise NotImplementedError
-#     # print(targets.shape)
-
-#     print(targets.shape, outputs.shape)
-#     np.save(args.log_dir + '/' + 'y_gt.npy', targets)
-#     np.save(args.log_dir + '/' + 'y_pred.npy', outputs)
-#     auc_each_class = computeAUROC(targets, outputs, num_classes)
-#     auc_each_class_array = np.array(auc_each_class)
-#     missing_classes_index = np.where(auc_each_class_array == 0)[0]
-#     # print(missing_classes_index)
-#     if missing_classes_index.shape[0] > 0:
-#         print('There are classes that not be predicted during testing,'
-#               ' the indexes are:', missing_classes_index)
-
-#     auc_avg = np.average(auc_each_class_array[auc_each_class_array != 0])
-#     metric_logger.synchronize_between_processes()
-
-#     print('Loss {losses.global_avg:.3f}'.format(losses=metric_logger.loss))
-#     if args.dataset == 'covidx':
-#         print('* Acc@1 {top1.global_avg:.3f}'.format(top1=metric_logger.acc1))
-#     return {**{k: meter.global_avg for k, meter in metric_logger.meters.items()},
-#             **{'auc_avg': auc_avg, 'auc_each_class': auc_each_class}}
-
 @torch.no_grad()
 def evaluate_chestxray(data_loader, model, device, args):
-
     if args.dataset == 'chestxray':
         criterion = torch.nn.BCEWithLogitsLoss()
     elif args.dataset == 'covidx':
@@ -312,13 +208,13 @@ def evaluate_chestxray(data_loader, model, device, args):
     targets = []
     for batch in metric_logger.log_every(data_loader, 10, header):
         images = batch[0]
-        target = batch[-1]
+        target = batch[1]
         images = images.to(device, non_blocking=True)
         target = target.to(device, non_blocking=True)
 
         # compute output
         with torch.cuda.amp.autocast():
-            output = model(images)
+            output, _ = model(images)
             loss = criterion(output, target)
 
         if args.dataset == 'covidx':
@@ -348,7 +244,7 @@ def evaluate_chestxray(data_loader, model, device, args):
     #     targets = torch.cat(targets_gathered, dim=0).cpu().numpy()
     #     auc_each_class = computeAUROC(targets, outputs, 14)
     #     auc_avg = np.average(auc_each_class)
-
+    
     num_classes = args.nb_classes
 
     outputs = torch.cat(outputs, dim=0).sigmoid().cpu().numpy()
@@ -395,8 +291,50 @@ def evaluate_chestxray(data_loader, model, device, args):
     if args.dataset == 'covidx':
         print('* Acc@1 {top1.global_avg:.3f}'.format(top1=metric_logger.acc1))
     return {**{k: meter.global_avg for k, meter in metric_logger.meters.items()},
-            **{'auc_avg': auc_avg, 'auc_each_class': auc_each_class}}, metric_logger.loss.global_avg
+            **{'auc_avg': auc_avg, 'auc_each_class': auc_each_class}}, loss
 
+@torch.no_grad()
+def evaluate_chestxray_before(data_loader, model, device, args):
+    if args.dataset == 'chestxray':
+        criterion = torch.nn.BCEWithLogitsLoss()
+    elif args.dataset == 'covidx':
+        criterion = torch.nn.CrossEntropyLoss()
+    elif args.dataset == 'node21':
+        if args.loss_func == 'bce':
+            criterion = torch.nn.BCEWithLogitsLoss()
+        elif args.loss_func is None:
+            criterion = torch.nn.CrossEntropyLoss()
+    elif args.dataset == 'chexpert':
+        criterion = losses.CrossEntropyLoss()
+    else:
+        raise NotImplementedError
+
+    metric_logger = misc.MetricLogger(delimiter="  ")
+    header = 'Test:'
+
+    # switch to evaluation mode
+    model.eval()
+    outputs = []
+    features = torch.empty((0, )).to(device)
+    indexes = torch.empty((0)).to(device)
+    for batch in metric_logger.log_every(data_loader, 10, header):
+        images = batch[0]
+        target = batch[1]
+        idx = batch[2]
+        images = images.to(device, non_blocking=True)
+        target = target.to(device, non_blocking=True)
+        idx = idx.to(device, non_blocking=True)
+
+        # compute output
+        with torch.cuda.amp.autocast():
+            output, feature = model(images)
+        outputs.append(output)
+        indexes = torch.cat((indexes, idx), dim=0)
+        features = torch.cat((features, feature), dim=0)
+
+    outputs = torch.cat(outputs, dim=0).sigmoid().cpu().numpy()
+
+    return features, indexes
 
 def print_metrics_covidx(y_test, pred):
     mapping = {
@@ -408,12 +346,8 @@ def print_metrics_covidx(y_test, pred):
     matrix = matrix.astype('float')
     print(matrix)
 
-    class_acc = [matrix[i, i]/np.sum(matrix[i, :]) if np.sum(
-        matrix[i, :]) else 0 for i in range(len(matrix))]
-    ppvs = [matrix[i, i]/np.sum(matrix[:, i]) if np.sum(matrix[:, i])
-            else 0 for i in range(len(matrix))]
+    class_acc = [matrix[i,i]/np.sum(matrix[i,:]) if np.sum(matrix[i,:]) else 0 for i in range(len(matrix))]
+    ppvs = [matrix[i,i]/np.sum(matrix[:,i]) if np.sum(matrix[:,i]) else 0 for i in range(len(matrix))]
 
-    print('Sens', ', '.join('{}: {:.3f}'.format(
-        cls.capitalize(), class_acc[i]) for cls, i in mapping.items()))
-    print('PPV', ', '.join('{}: {:.3f}'.format(
-        cls.capitalize(), ppvs[i]) for cls, i in mapping.items()))
+    print('Sens', ', '.join('{}: {:.3f}'.format(cls.capitalize(), class_acc[i]) for cls, i in mapping.items()))
+    print('PPV', ', '.join('{}: {:.3f}'.format(cls.capitalize(), ppvs[i]) for cls, i in mapping.items()))

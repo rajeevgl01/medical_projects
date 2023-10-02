@@ -218,7 +218,7 @@ class ChestX_ray14(Dataset):
             label = torch.tensor(label, dtype=torch.float)
             if self.pretraining:
                 label = -1
-            return img, label
+            return img, label, index
         else:
             # heatmap = Image.open('nih_bbox_heatmap.png')
             heatmap = self.heatmap
@@ -268,7 +268,7 @@ class Covidx(torch.utils.data.Dataset):
         image = self.transform(image)
         label = self.class2label[label]
         label = torch.tensor(label, dtype=torch.long)
-        return image, label
+        return image, label, index
 
 
 class Node21(torch.utils.data.Dataset):
@@ -496,7 +496,7 @@ class CheXpert(Dataset):
             if self.pretraining:
                 label = -1
 
-            return image, label
+            return image, label, idx
         else:
             # heatmap = Image.open('nih_bbox_heatmap.png')
             heatmap = self.heatmap
