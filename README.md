@@ -1,4 +1,4 @@
-# Medical Masked Autoencoders
+# Learning Low-Rank Feature for Thorax Disease Classification
 
 
 ## Installing Requirements
