@@ -1,9 +1,9 @@
 [NeurIPS 2024 Poster]# Learning Low-Rank Feature for Thorax Disease Classification
 
-[Rajeev Goel]$^{\color{red}{\*}}$**, [Yancheng Wang]$^{\color{red}{\*}}$, Utkarsh Nath, Alvin C. Silva, Teresa Wu, Yingzhen Yang
+Rajeev Goel*, Yancheng Wang*, Utkarsh Nath, Alvin C. Silva, Teresa Wu, Yingzhen Yang
 
-$\color{red}{\*}$: Equal contribution.
-\**: Corresponding author.
+*: Equal contribution.
+Corresponding author: Rajeev Goel
 
 [Paper PDF (OpenReview)](https://openreview.net/pdf?id=GkzrVxs9LS)
 The paper is now accepted to NeurIPS 2024 as poster.
