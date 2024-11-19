@@ -1,4 +1,4 @@
-[NeurIPS 2024 Poster]# Learning Low-Rank Feature for Thorax Disease Classification
+# [NeurIPS 2024 Poster]# Learning Low-Rank Feature for Thorax Disease Classification
 
 Rajeev Goel*, Yancheng Wang*, Utkarsh Nath, Alvin C. Silva, Teresa Wu, Yingzhen Yang
 
